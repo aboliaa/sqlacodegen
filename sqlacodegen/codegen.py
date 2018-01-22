@@ -26,6 +26,10 @@ _re_enum_check_constraint = re.compile(r"(?:(?:.*?)\.)?(.*?) IN \((.+)\)")
 _re_enum_item = re.compile(r"'(.*?)(?<!\\)'")
 _re_invalid_identifier = re.compile(r'[^a-zA-Z0-9_]' if sys.version_info[0] < 3 else r'(?u)\W')
 
+STYLE_NO_CHANGE = 0
+STYLE_CAMEL_CASE = 1
+STYLE_UNDERSCORE = 2
+
 
 class _DummyInflectEngine(object):
     @staticmethod
@@ -45,6 +49,24 @@ def _convert_to_valid_identifier(name):
     if name[0].isdigit() or iskeyword(name):
         name = '_' + name
     return _re_invalid_identifier.sub('_', name)
+
+
+def _to_underscore(name):
+    s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
+    return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
+
+
+def _to_camelcase(s):
+    return re.sub(r'(?!^)_([a-zA-Z])', lambda m: m.group(1).upper(), s)
+
+
+def _format_style(str, style):
+    if style == STYLE_CAMEL_CASE:
+        return _to_camelcase(str)
+    elif style == STYLE_UNDERSCORE:
+        return _to_underscore(str)
+    else:
+        return str
 
 
 def _get_compiled_expression(statement):
@@ -546,7 +568,7 @@ class CodeGenerator(object):
 
         return rendered.rstrip('\n,') + '\n)\n'
 
-    def render_class(self, model):
+    def render_class(self, model, style=STYLE_NO_CHANGE):
         rendered = 'class {0}({1}):\n'.format(model.name, model.parent_name)
         rendered += '{0}__tablename__ = {1!r}\n'.format(self.indentation, model.table.name)
 
@@ -582,8 +604,8 @@ class CodeGenerator(object):
         rendered += '\n'
         for attr, column in model.attributes.items():
             if isinstance(column, Column):
-                show_name = attr != column.name
-                rendered += '{0}{1} = {2}\n'.format(self.indentation, attr, self.render_column(column, show_name))
+                show_name = True
+                rendered += '{0}{1} = {2}\n'.format(self.indentation, _format_style(attr, style), self.render_column(column, show_name))
 
         # Render relationships
         if any(isinstance(value, Relationship) for value in model.attributes.values()):
@@ -598,11 +620,11 @@ class CodeGenerator(object):
 
         return rendered
 
-    def render(self, outfile=sys.stdout):
+    def render(self, outfile=sys.stdout, style=STYLE_NO_CHANGE):
         rendered_models = []
         for model in self.models:
             if isinstance(model, self.class_model):
-                rendered_models.append(self.render_class(model))
+                rendered_models.append(self.render_class(model, style=style))
             elif isinstance(model, self.table_model):
                 rendered_models.append(self.render_table(model))
 
